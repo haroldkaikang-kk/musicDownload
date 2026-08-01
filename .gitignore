@@ -1,4 +1,22 @@
-/.musicdl_temp
-/build
-/dist
-/*.spec
+# macOS metadata
+.DS_Store
+__MACOSX/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# MusicDownload runtime and build outputs
+.musicdl_temp/
+build/
+dist/
+release/
+build_assets/
+assets/MusicDownload.icns
+*.app/
+*.dmg
