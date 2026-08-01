@@ -9,6 +9,7 @@ APP_VERSION="1.2.1"
 VENV_DIR="$SCRIPT_DIR/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 PREVIOUS_VENV_DIR="$(dirname "$SCRIPT_DIR")/MusicDownload-1.2.0-Professional-macOS12-Intel/.venv"
+PREVIOUS_VENV_PYTHON="$PREVIOUS_VENV_DIR/bin/python"
 RELEASE_DIR="$SCRIPT_DIR/release"
 DMG_STAGE="$RELEASE_DIR/dmg-stage"
 DMG_PATH="$RELEASE_DIR/MusicDownload-${APP_VERSION}-macOS12-Intel.dmg"
@@ -42,6 +43,32 @@ find_python312() {
             printf "%s\n" "$candidate"
             return 0
         fi
+    fi
+
+    return 1
+}
+
+python_minor_version() {
+    "$1" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null
+}
+
+find_previous_base_python312() {
+    if [ -x "$PREVIOUS_VENV_PYTHON" ]; then
+        previous_version="$(python_minor_version "$PREVIOUS_VENV_PYTHON")"
+        if [ "$previous_version" = "3.12" ]; then
+            base_python="$("$PREVIOUS_VENV_PYTHON" -c 'import sys; print(sys._base_executable)' 2>/dev/null)"
+            if [ -n "$base_python" ] && [ -x "$base_python" ]; then
+                base_version="$(python_minor_version "$base_python")"
+                if [ "$base_version" = "3.12" ]; then
+                    printf "%s\n" "$base_python"
+                    return 0
+                fi
+            fi
+            printf "同层 1.2.0 .venv 的基础 Python 无效或不是 Python 3.12，不能用于建立当前环境。\n" >&2
+            return 1
+        fi
+        printf "同层 1.2.0 .venv 使用 Python %s，不能用于寻找基础 Python 3.12。\n" \
+            "${previous_version:-未知版本}" >&2
     fi
 
     return 1
@@ -113,31 +140,34 @@ if [ "$(uname -m)" != "x86_64" ]; then
     pause_and_exit 1 "当前版本专门面向 Intel Mac（x86_64）。"
 fi
 
-if ! PYTHON_BIN="$(find_python312)"; then
-    printf "没有找到 Python 3.12。\n\n"
-    printf "请安装 Python 3.12.10 的 macOS 64-bit universal2 installer：\n"
-    printf "https://www.python.org/downloads/release/python-31210/\n"
-    pause_and_exit 1 "安装 Python 3.12.10 后，再次运行本制作器。"
-fi
-
 printf "[1/8] 准备独立构建环境……\n"
-if [ ! -x "$VENV_PYTHON" ] && [ -x "$PREVIOUS_VENV_DIR/bin/python" ]; then
-    previous_venv_version="$("$PREVIOUS_VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)"
-    if [ "$previous_venv_version" = "3.12" ]; then
-        VENV_DIR="$PREVIOUS_VENV_DIR"
-        VENV_PYTHON="$VENV_DIR/bin/python"
-        printf "已找到 1.2.0 安装完成的 Python 3.12 环境，将直接复用，不重复下载全部依赖。\n"
+if [ -x "$VENV_PYTHON" ] && [ "$(python_minor_version "$VENV_PYTHON")" = "3.12" ]; then
+    printf "使用当前 1.2.1 的独立 Python 3.12 .venv。\n"
+else
+    if [ -x "$VENV_PYTHON" ]; then
+        current_version="$(python_minor_version "$VENV_PYTHON")"
+        printf "当前 1.2.1 .venv 使用 Python %s，需要重新建立为 Python 3.12。\n" \
+            "${current_version:-未知版本}"
+    else
+        printf "当前 1.2.1 尚未建立独立的 Python 3.12 .venv。\n"
     fi
-fi
-if [ -x "$VENV_PYTHON" ]; then
-    venv_version="$("$VENV_PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)"
-    if [ "$venv_version" != "3.12" ]; then
-        printf "发现旧环境使用 Python %s，正在重建为 Python 3.12……\n" "${venv_version:-未知版本}"
-        rm -rf "$VENV_DIR"
+
+    if PYTHON_BIN="$(find_previous_base_python312)"; then
+        printf "已从同层 1.2.0 .venv 找到基础 Python 3.12；旧环境本身不会被安装、更新或用于运行 1.2.1。\n"
+    elif PYTHON_BIN="$(find_python312)"; then
+        printf "已找到系统 Python 3.12，将用于建立当前 1.2.1 的独立 .venv。\n"
+    else
+        printf "无法从同层 1.2.0 环境或系统中找到可用于建立新环境的 Python 3.12。\n\n"
+        printf "请安装 Python 3.12.10 的 macOS 64-bit universal2 installer：\n"
+        printf "https://www.python.org/downloads/release/python-31210/\n"
+        pause_and_exit 1 "安装 Python 3.12.10 后，再次运行本制作器。"
     fi
-fi
-if [ ! -x "$VENV_PYTHON" ]; then
+
+    rm -rf "$VENV_DIR"
     "$PYTHON_BIN" -m venv "$VENV_DIR" || pause_and_exit 1 "创建 Python 环境失败。"
+    if [ ! -x "$VENV_PYTHON" ] || [ "$(python_minor_version "$VENV_PYTHON")" != "3.12" ]; then
+        pause_and_exit 1 "当前 1.2.1 的 Python 3.12 虚拟环境验证失败。"
+    fi
 fi
 
 printf "\n[2/8] 检查 Python 下载证书……\n"
